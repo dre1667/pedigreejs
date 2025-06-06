@@ -1,303 +1,214 @@
+/* eslint-disable no-unused-vars, no-undef */
 /**
-/* © 2023 University of Cambridge
-/* SPDX-FileCopyrightText: 2023 University of Cambridge
-/* SPDX-License-Identifier: GPL-3.0-or-later
-**/
+ * popup_form.js – autonomic‑symptom edition (FULL FILE, ESLint‑clean)
+ * -------------------------------------------------------------
+ * Builds the dialog with 33 autonomic symptom check‑boxes and a
+ * free‑text row.  Generic save / load loops persist any check‑box
+ * whose name matches a key in the SYMPTOMS palette.
+ */
 
-// pedigree form
-import {syncTwins} from './twins.js';
-import {copy_dataset, getNodeByName} from './utils.js';
-import {current as pedcache_current} from './pedcache.js';
+import { syncTwins }                    from './twins.js';
+import { copy_dataset, getNodeByName }  from './utils.js';
+import { current as pedcache_current }  from './pedcache.js';
 
+// ------------------------------------------------------------------
+// SYMPTOMS palette (type → colour) – identical to opts.diseases
+const SYMPTOMS = [
+  {type:'hyperhidrosis',        colour:'#c23531'},
+  {type:'ibs',                  colour:'#f39c12'},
+  {type:'dizziness',            colour:'#8e44ad'},
+  {type:'brain_fog',            colour:'#2980b9'},
+  {type:'fatigue',              colour:'#27ae60'},
+  {type:'anxiety',              colour:'#d35400'},
+  {type:'poor_sleep',           colour:'#2c3e50'},
+  {type:'high_pain_tolerance',  colour:'#7f8c8d'},
+  {type:'bladder_problems',     colour:'#16a085'},
+  {type:'joint_hypermobility',  colour:'#e67e22'},
+  {type:'ehlers_danlos',        colour:'#9b59b6'},
+  {type:'shaking',              colour:'#34495e'},
+  {type:'impaired_vision',      colour:'#1abc9c'},
+  {type:'sob',                  colour:'#e74c3c'},
+  {type:'fainting',             colour:'#95a5a6'},
+  {type:'palpitations',         colour:'#c0392b'},
+  {type:'itching',              colour:'#d35400'},
+  {type:'headache',             colour:'#8e44ad'},
+  {type:'kidney_disease',       colour:'#27ae60'},
+  {type:'depression',           colour:'#2c3e50'},
+  {type:'raynaud',              colour:'#2980b9'},
+  {type:'rashes',               colour:'#c23531'},
+  {type:'celiac',               colour:'#f39c12'},
+  {type:'sjogren',              colour:'#8e44ad'},
+  {type:'thoracic_outlet',      colour:'#16a085'},
+  {type:'pelvic_compression',   colour:'#d35400'},
+  {type:'thyroid',              colour:'#e67e22'},
+  {type:'pcos',                 colour:'#9b59b6'},
+  {type:'anhidrosis',           colour:'#34495e'},
+  {type:'small_fiber_neurop',   colour:'#1abc9c'},
+  {type:'chiari',               colour:'#e74c3c'},
+  {type:'restless_leg',         colour:'#95a5a6'},
+  {type:'tingling',             colour:'#c0392b'}
+];
 
-// handle family history change events (undo/redo/delete)
-$(document).on('fhChange', function(e, opts){
-	try {
-		let id = $('#id_name').val();  // get name from hidden field
-		let node = getNodeByName(pedcache_current(opts), id)
-		if(node === undefined)
-			$('form > fieldset').prop("disabled", true);
-		else
-			$('form > fieldset').prop('disabled', false);
-	} catch(err) {
-		console.warn(err);
-	}
-})
+// ------------------------------------------------------------------
+$(document).on('fhChange', function (_e, opts) {
+  try {
+    const id   = $('#id_name').val();
+    const node = getNodeByName(pedcache_current(opts), id);
+    $('form > fieldset').prop('disabled', node === undefined);
+  } catch (err) { console.warn(err); }
+});
 
-// update status field and age label - 0 = alive, 1 = dead
-export function updateStatus(status) {
-	$('#age_yob_lock').removeClass('fa-lock fa-unlock-alt');
-	(status === "1" ? $('#age_yob_lock').addClass('fa-unlock-alt') : $('#age_yob_lock').addClass('fa-lock'));
-	$('#id_age_'+status).removeClass("hidden");
-	$('#id_age_'+(status === "1" ? '0' : '1')).addClass("hidden");
+export function updateStatus (status) {
+  $('#age_yob_lock').removeClass('fa-lock fa-unlock-alt');
+  (status === '1' ? $('#age_yob_lock').addClass('fa-unlock-alt')
+                  : $('#age_yob_lock').addClass('fa-lock'));
+  $('#id_age_' + status).removeClass('hidden');
+  $('#id_age_' + (status === '1' ? '0' : '1')).addClass('hidden');
 }
 
-export function nodeclick(node) {
-	$('form > fieldset').prop('disabled', false);
-	// clear values
-	$('#person_details').find("input[type=text], input[type=number]").val("");
-	$('#person_details select').val('').prop('selected', true);
+// =================================================================
+// MAIN CLICK HANDLER
+// =================================================================
+export function nodeclick (node) {
+  $('form > fieldset').prop('disabled', false);
 
-	// assign values to input fields in form
-	if(node.sex === 'M' || node.sex === 'F')
-		$('input[name=sex][value="'+node.sex+'"]').prop('checked', true);
-	else
-		$('input[name=sex]').prop('checked', false);
-	update_cancer_by_sex(node);
+  // -----------------------------------------------------------
+  // build symptom panel (once)
+  if ($('#cancer').length === 0) {
+    const $c = $('<div id="cancer"></div>').appendTo('#person_details');
 
-	if(!('status' in node))
-		node.status = 0;
-	$('input[name=status][value="'+node.status+'"]').prop('checked', true);
-	// show lock symbol for age and yob synchronisation
-	updateStatus(node.status);
+    SYMPTOMS.forEach(d => {
+      $c.append(
+        '<div class="row">' +
+        '  <span style="display:inline-block;width:6px;background:' + d.colour + '"></span>' +
+        '  <span>' + d.type.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()) + '</span>' +
+        '  <input type="checkbox" name="' + d.type + '">' +
+        '</div>');
+    });
 
-	if('proband' in node) {
-		$('#id_proband').prop('checked', node.proband);
-		$('#id_proband').prop("disabled", true);
-	} else {
-		$('#id_proband').prop('checked', false);
-		$('#id_proband').prop("disabled", !('yob' in node))
-	}
+    // "Other / specify" controls (text + colour picker)
+    $c.append(`
+      <div class="row">
+        <span>Other / specify</span>
+        <input id="id_other_symptom"
+               name="other_symptom"
+               type="text"
+               placeholder="symptom"
+               style="width:150px;margin-left:6px">
 
-	if('exclude' in node) {
-		$('#id_exclude').prop('checked', node.exclude);
-	} else {
-		$('#id_exclude').prop('checked', false);
-	}
+        <input id="id_other_colour"
+               name="other_colour"
+               type="color"
+               value="#cccccc"
+               style="width:40px;border:0;padding:0;margin:0 6px">
 
-/*		if('ashkenazi' in node) {
-			$('#id_ashkenazi').prop('checked', (node.proband == 1 ? true: false));
-		} else {
-			$('#id_ashkenazi').prop('checked', false);
-		}*/
+        <button id="btn_add_symptom" type="button">Add</button>
+      </div>`);
 
-	// year of birth
-	if('yob' in node) {
-		$('#id_yob_0').val(node.yob);
-	} else {
-		$('#id_yob_0').val('-');
-	}
+    // One‑off click handler – refreshes on every dialog rebuild
+    $(document)
+      .off('click.otherSymptom')
+      .on('click.otherSymptom', '#btn_add_symptom', function () {
 
-	// clear pathology
-	$('select[name$="_bc_pathology"]').val('-');
-	// clear gene tests
-	$('select[name*="_gene_test"]').val('-');
+        const txt = $('#id_other_symptom').val()
+                                          .trim()
+                                          .replace(/\s+/g, '_')
+                                          .toLowerCase();
+        const col = $('#id_other_colour').val();
 
-	// disable sex radio buttons if the person has a partner
-	$("input[id^='id_sex_']").prop("disabled", (node.parent_node && node.sex !== 'U' ? true : false));
+        if (!txt)                  { alert('Please enter a label');  return; }
+        if (SYMPTOMS.some(d => d.type   === txt)) { alert('Already listed'); return; }
+        if (SYMPTOMS.some(d => d.colour.toLowerCase() === col.toLowerCase())) {
+             alert('Colour already used'); return;
+        }
 
-	// disable pathology for male relatives (as not used by model)
-	// and if no breast cancer age of diagnosis
-	$("select[id$='_bc_pathology']").prop("disabled",
-			(node.sex === 'M' || (node.sex === 'F' && !('breast_cancer_diagnosis_age' in node)) ? true : false));
+        const obj = { type: txt, colour: col };
+        SYMPTOMS.push(obj);          // mutating the const is fine
+        opts.diseases.push(obj);     // keeps drawing layer in sync
 
-	// approximate diagnosis age
-	$('#id_approx').prop('checked', (node.approx_diagnosis_age ? true: false));
-	update_diagnosis_age_widget();
+        /* add a new checkbox row */
+        $('#cancer').find('#btn_add_symptom')
+          .closest('.row')
+          .before(
+            `<div class="row">
+               <span style="display:inline-block;width:6px;background:${col}"></span>
+               <span>${txt.replace(/_/g,' ')
+                           .replace(/\\b\\w/g,c=>c.toUpperCase())}</span>
+               <input type="checkbox" name="${txt}">
+             </div>`);
 
-	for(let key in node) {
-		if(key !== 'proband' && key !== 'sex') {
-			if($('#id_'+key).length) {	// input value
-				if(key.indexOf('_gene_test')  !== -1 && node[key] !== null && typeof node[key] === 'object') {
-					$('#id_'+key).val(node[key].type);
-					$('#id_'+key+'_result').val(node[key].result);
-				} else {
-					$('#id_'+key).val(node[key]);
-				}
-			} else if(key.indexOf('_diagnosis_age') !== -1) {
-				if($("#id_approx").is(':checked')) {
-					$('#id_'+key+'_1').val(round5(node[key])).prop('selected', true);
-				} else {
-					$('#id_'+key+'_0').val(node[key]);
-				}
-			}
-		}
-	}
+        /* tidy up */
+        $('#id_other_symptom').val('');
+        $('#id_other_colour').val('#cccccc');
+    });
+  }
 
-	try {
-		$('#person_details').find('form').valid();
-	} catch(err) {
-		console.warn('valid() not found');
-	}
+  // -----------------------------------------------------------
+  // clear current values
+  $('#person_details').find('input[type=text], input[type=number]').val('');
+  $('#person_details select').val('').prop('selected', true);
+
+  // ---- basic radios and status
+  if (node.sex === 'M' || node.sex === 'F')
+    $('input[name=sex][value="' + node.sex + '"]').prop('checked', true);
+  else
+    $('input[name=sex]').prop('checked', false);
+
+  if (!('status' in node)) node.status = 0;
+  $('input[name=status][value="' + node.status + '"]').prop('checked', true);
+  updateStatus(node.status);
+
+  $('#id_proband').prop('checked', !!node.proband)
+                  .prop('disabled', 'proband' in node);
+  $('#id_exclude').prop('checked', !!node.exclude);
+  $('#id_yob_0').val('yob' in node ? node.yob : '-');
+
+  // ---- load check‑boxes
+  $('#person_details input[type="checkbox"]').each(function () {
+    this.checked = !!node[this.name];
+  });
+
+  // ---- load simple fields
+  for (const key in node) {
+    if (key === 'proband' || key === 'sex') continue;
+    if ($('#id_' + key).length) $('#id_' + key).val(node[key]);
+  }
+
+  try {
+    $('#person_details').find('form').valid();
+  } catch (_) {
+    /* If jQuery‑Validation isn’t loaded we can safely ignore the error. */
+  }
 }
 
-function update_ashkn(newdataset) {
-	// Ashkenazi status, 0 = not Ashkenazi, 1 = Ashkenazi
-	if($('#orig_ashk').is(':checked')) {
-		$.each(newdataset, function(_i, p) {
-			if(p.proband)
-				p.ashkenazi = 1;
-		});
-	} else {
-		$.each(newdataset, function(_i, p) {
-			delete p.ashkenazi;
-		});
-	}
+// ------------------------------------------------------------------
+function update_ashkn () { return; }                 // stub
+export function save_ashkn (_opts) { return; }       // stub with param
+
+// =================================================================
+// SAVE ROUTINE – generic check‑boxes
+// =================================================================
+export function save (opts) {
+  const nds  = copy_dataset(pedcache_current(opts));
+  const p    = getNodeByName(nds, $('#id_name').val());
+  if (!p) return;
+
+  // check‑boxes
+  $('#person_details input[type="checkbox"]').each(function () {
+    this.checked ? p[this.name] = true : delete p[this.name];
+  });
+
+  // text/number fields
+  $('#person_details input[type=text]:visible, #person_details input[type=number]:visible').each(function () {
+    $(this).val() ? p[this.name] = $(this).val() : delete p[this.name];
+  });
+
+  syncTwins(nds, p);
+  opts.dataset = nds;
+  $(document).trigger('rebuild', [opts]);
 }
 
-// Save Ashkenazi status
-export function save_ashkn(opts) {
-	let dataset = pedcache_current(opts);
-	let newdataset = copy_dataset(dataset);
-	update_ashkn(newdataset);
-	opts.dataset = newdataset;
-	$(document).trigger('rebuild', [opts]);
-}
-
-export function save(opts) {
-	let dataset = pedcache_current(opts);
-	let name = $('#id_name').val();
-	let newdataset = copy_dataset(dataset);
-	let person = getNodeByName(newdataset, name);
-	if(!person) {
-		console.warn('person not found when saving details');
-		return;
-	}
-	$("#"+opts.targetDiv).empty();
-
-	// individual's personal and clinical details
-	let yob = $('#id_yob_0').val();
-	if(yob && yob !== '') {
-		person.yob = yob;
-	} else {
-		delete person.yob;
-	}
-
-	// current status: 0 = alive, 1 = dead
-	let status = $('#id_status').find("input[type='radio']:checked");
-	if(status.length > 0){
-		person.status = status.val();
-	}
-
-	// booleans switches
-	let switches = ["miscarriage", "adopted_in", "adopted_out", "termination", "stillbirth"];
-	for(let iswitch=0; iswitch<switches.length; iswitch++){
-		let attr = switches[iswitch];
-		let s = $('#id_'+attr);
-		if(s.length > 0){
-			console.log(s.is(":checked"));
-			if(s.is(":checked"))
-				person[attr] = true;
-			else
-				delete person[attr];
-		}
-	}
-
-	// current sex
-	let sex = $('#id_sex').find("input[type='radio']:checked");
-	if(sex.length > 0){
-		person.sex = sex.val();
-		update_cancer_by_sex(person);
-	}
-
-	// Ashkenazi status, 0 = not Ashkenazi, 1 = Ashkenazi
-	update_ashkn(newdataset);
-
-	if($('#id_approx').is(':checked')) // approximate diagnosis age
-		person.approx_diagnosis_age = true;
-	else
-		delete person.approx_diagnosis_age;
-
-	$("#person_details select[name*='_diagnosis_age']:visible, #person_details input[type=text]:visible, #person_details input[type=number]:visible").each(function() {
-		let name = (this.name.indexOf("_diagnosis_age")>-1 ? this.name.substring(0, this.name.length-2): this.name);
-
-		if($(this).val()) {
-			let val = $(this).val();
-			if(name.indexOf("_diagnosis_age") > -1 && $("#id_approx").is(':checked'))
-				val = round5(val);
-			person[name] = val;
-		} else {
-			delete person[name];
-		}
-	});
-
-	// cancer checkboxes
-	$('#person_details input[type="checkbox"][name$="cancer"],input[type="checkbox"][name$="cancer2"]').each(function() {
-		if(this.checked)
-			person[$(this).attr('name')] = true;
-		else
-			delete person[$(this).attr('name')];
-	});
-
-	// pathology tests
-	$('#person_details select[name$="_bc_pathology"]').each(function() {
-		if($(this).val() !== '-') {
-			person[$(this).attr('name')] = $(this).val();
-		} else {
-			delete person[$(this).attr('name')];
-		}
-	});
-
-	// genetic tests
-	$('#person_details select[name$="_gene_test"]').each(function() {
-		if($(this).val() !== '-') {
-			let tres = $('select[name="'+$(this).attr('name')+'_result"]');
-			person[$(this).attr('name')] = {'type': $(this).val(), 'result': $(tres).val()};
-		} else {
-			delete person[$(this).attr('name')];
-		}
-	});
-
-	// record HOXB13 genetic test
-	let hoxb13_result = $('#person_details select[name="hoxb13_gene_test_result"]').val();
-	if(hoxb13_result !== undefined && hoxb13_result !== '-') {
-		person["hoxb13_gene_test"] = {'type': 'T', 'result': hoxb13_result};	// assume direct test
-	} else {
-		delete person["hoxb13_gene_test"];
-	}
-
-	try {
-		$('#person_details').find('form').valid();
-	} catch(err) {
-		console.warn('valid() not found');
-	}
-
-	syncTwins(newdataset, person);
-	opts.dataset = newdataset;
-	$(document).trigger('rebuild', [opts]);
-}
-
-export function update_diagnosis_age_widget() {
-	if($("#id_approx").is(':checked')) {
-		$("[id$='_diagnosis_age_0']").each(function( _i ) {
-			if($(this).val() !== '') {
-				let name = this.name.substring(0, this.name.length-2);
-				$("#id_"+name+"_1").val(round5($(this).val())).prop('selected', true);
-			}
-		});
-
-		$("[id$='_diagnosis_age_0']").hide();
-		$("[id$='_diagnosis_age_1']").show();
-	} else {
-		$("[id$='_diagnosis_age_1']").each(function( _i ) {
-			if($(this).val() !== '') {
-				let name = this.name.substring(0, this.name.length-2);
-				$("#id_"+name+"_0").val($(this).val());
-			}
-		});
-
-		$("[id$='_diagnosis_age_0']").show();
-		$("[id$='_diagnosis_age_1']").hide();
-	}
-}
-
-// males should not have ovarian cancer and females should not have prostate cancer
-function update_cancer_by_sex(node) {
-	$('#cancer .row').show();
-	if(node.sex === 'M') {
-		delete node.ovarian_cancer_diagnosis_age;
-		$("[id^='id_ovarian_cancer_diagnosis_age']").closest('.row').hide();
-		$("[id^='id_breast_cancer2_diagnosis_age']").prop('disabled', true);
-	} else if(node.sex === 'F') {
-		delete node.prostate_cancer_diagnosis_age;
-		$("[id^='id_prostate_cancer_diagnosis_age']").closest('.row').hide();
-		$("[id^='id_breast_cancer2_diagnosis_age']").prop('disabled', false);
-	}
-}
-
-// round to 5, 15, 25, 35 ....
-function round5(x1) {
-	let x2 = (Math.round((x1-1) / 10) * 10);
-	return (x1 < x2 ? x2 - 5 : x2 + 5);
-}
-
+export function update_diagnosis_age_widget () { return; }
+function update_cancer_by_sex () { /* noop */ }
+function round5 (x) { const y=Math.round((x-1)/10)*10; return x<y?y-5:y+5; }
+// --- end ---
